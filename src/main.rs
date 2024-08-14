@@ -2,11 +2,16 @@ use dotenv::dotenv;
 use helius::types::*;
 use helius::Helius;
 use rand::Rng;
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_client::rpc_config::RpcSendTransactionConfig;
+use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::commitment_config::CommitmentLevel;
+use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::instruction::Instruction;
 use solana_sdk::pubkey;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signer::Signer;
+use solana_sdk::transaction::Transaction;
 use solana_sdk::{signature::Keypair, system_instruction};
 use std::env;
 use std::fs::File;
@@ -19,7 +24,9 @@ async fn main() {
     dotenv().ok();
     let api_key = env::var("API_KEY").expect("No API_KEY provided");
     let keystring = env::var("PRIVATE_KEY").expect("No PRIVATE_KEY provided");
+    let rpc_url = env::var("RPC_URL").expect("No RPC_URL provided");
     let helius = Helius::new(&api_key, Cluster::MainnetBeta).unwrap();
+    let connection = RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
 
     let keybytes: Vec<u8> = keystring
         .trim_matches(|p| p == '[' || p == ']')
@@ -31,7 +38,11 @@ async fn main() {
     let wallet = Keypair::from_bytes(&keybytes).unwrap();
     let from_pubkey = wallet.pubkey();
 
-    smart_transactions(helius, from_pubkey, wallet)
+    // smart_transactions(helius, from_pubkey, wallet)
+    //     .await
+    //     .unwrap();
+
+    raw_transactions(connection, from_pubkey, wallet)
         .await
         .unwrap();
 }
@@ -67,7 +78,7 @@ async fn smart_transactions(
                 skip_preflight: true,
                 preflight_commitment: None,
                 encoding: None,
-                max_retries: Some(2),
+                max_retries: Some(0),
                 min_context_slot: None,
             },
         };
@@ -89,6 +100,61 @@ async fn smart_transactions(
 
     Ok(())
 }
+
+// async fn raw_transactions(
+//     connection: RpcClient,
+//     from_pubkey: Pubkey,
+//     wallet: Keypair,
+// ) -> io::Result<()> {
+//     let entries = get_addresses().unwrap();
+//     let batch_size = 20;
+//     let mut batch_num = 1;
+//     let compute_unit: u32 = 3500;
+//     let priority_fee: u64 = 100_000;
+
+//     for chunk in entries.chunks(batch_size) {
+//         let mut instructions: Vec<Instruction> = Vec::new();
+
+//         let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_price(priority_fee);
+//         let compute_units_ix = ComputeBudgetInstruction::set_compute_unit_limit(compute_unit);
+
+//         instructions.push(compute_budget_ix);
+//         instructions.push(compute_units_ix);
+
+//         let recent_blockhash = connection.get_latest_blockhash().await.unwrap();
+
+//         println!("Recent blockhash: {:?}", recent_blockhash);
+
+//         for entry in chunk {
+//             let to_pubkey = pubkey::Pubkey::from_str(&entry.address).unwrap();
+//             let amt = entry.amount;
+
+//             let ix = system_instruction::transfer(&from_pubkey, &to_pubkey, amt);
+//             instructions.push(ix);
+//         }
+
+//         let tx = Transaction::new_signed_with_payer(
+//             &instructions,
+//             Some(&wallet.pubkey()),
+//             &[&wallet],
+//             recent_blockhash,
+//         );
+
+//         match connection.send_and_confirm_transaction(&tx).await {
+//             Ok(res) => {
+//                 println!(
+//                     "Transaction successful for batch {:?}: {:?}",
+//                     batch_num, res
+//                 );
+//             }
+//             Err(e) => {
+//                 println!("Error in batch {:?}: {:?}", batch_num, e);
+//             }
+//         }
+//         batch_num += 1;
+//     }
+//     Ok(())
+// }
 
 struct Entry {
     address: String,
